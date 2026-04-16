@@ -21,7 +21,9 @@ def clean_text(text):
     text = text.replace("Participant_", "P_").lower()
     text = re.sub(r'[^a-z0-9\s:]', '', text)
     fillers = {'um', 'uh', 'mmhmm', 'okay', 'yeah', 'ah', 'oh', 'like'}
-    all_stop_words = (stop_words.union(fillers)) - {'not', 'no', 'dont'}
+    # Matches your training script exactly:
+    essential_words = {'not', 'no', 'dont', 'doesnt', 'isnt', 'wont'}
+    all_stop_words = (stop_words.union(fillers)) - essential_words
     return " ".join([w for w in text.split() if w not in all_stop_words])
 
 def parse_vtt(content):
@@ -39,17 +41,27 @@ def load_model(path):
 def run_inference(model, tokenizer, snippet, params):
     outputs = {}
     for task, prefix in {"Summary": "produce summary: ", "Actions": "list actions: "}.items():
-        input_ids = tokenizer(prefix + snippet, return_tensors="pt", truncation=True).input_ids
+        input_text = f"{prefix}{snippet}"
+        # Ensure we use the same max_length as training (512)
+        input_ids = tokenizer(input_text, return_tensors="pt", truncation=True, max_length=512).input_ids
+        
         gen_tokens = model.generate(
             input_ids, 
             max_length=256, 
             num_beams=params['num_beams'],
-            no_repeat_ngram_size=params['no_repeat'],
+            # These two are CRITICAL - they were hardcoded in your training eval
+            no_repeat_ngram_size=params['no_repeat'], 
             repetition_penalty=params['rep_penalty'],
             temperature=params['temp'],
             do_sample=True if params['temp'] > 0 else False
         )
-        outputs[task] = tokenizer.decode(gen_tokens[0], skip_special_tokens=True)
+        decoded = tokenizer.decode(gen_tokens[0], skip_special_tokens=True)
+        
+        # Security check: if model fails, don't return 'False'
+        if not decoded or decoded.lower() == 'false':
+            outputs[task] = "Model could not generate a clear result. Try adjusting 'Beams' or 'Penalty'."
+        else:
+            outputs[task] = decoded
     return outputs
 
 # --- SIDEBAR: VIEW SELECTION ---
