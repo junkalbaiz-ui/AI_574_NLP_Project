@@ -10,7 +10,11 @@ from nltk.corpus import stopwords
 nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 
-st.set_page_config(page_title="Teams AI Analyst V2", page_icon="🤖", layout="wide")
+st.set_page_config(
+    page_title="MS Teams AI - Comparison", 
+    page_icon="https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/c7/bd/2f/c7bd2f1f-f892-13ba-d8df-813d18a7c503/Placeholder.mill/400x400bb-75.webp",
+    layout="wide"
+)
 
 # --- CORE FUNCTIONS ---
 def clean_text(text):
@@ -27,78 +31,111 @@ def parse_vtt(content):
     return " ".join([f"{speaker}: {text.strip()}" for speaker, text in matches])
 
 @st.cache_resource
-def load_model(folder_path):
-    model = T5ForConditionalGeneration.from_pretrained(folder_path)
-    tokenizer = T5Tokenizer.from_pretrained(folder_path)
+def load_model(path):
+    model = T5ForConditionalGeneration.from_pretrained(path)
+    tokenizer = T5Tokenizer.from_pretrained(path)
     return model, tokenizer
 
-def run_inference(model, tokenizer, snippet):
+def run_inference(model, tokenizer, snippet, params):
     outputs = {}
     for task, prefix in {"Summary": "produce summary: ", "Actions": "list actions: "}.items():
         input_ids = tokenizer(prefix + snippet, return_tensors="pt", truncation=True).input_ids
-        gen_tokens = model.generate(input_ids, max_length=256, num_beams=4, no_repeat_ngram_size=3)
+        gen_tokens = model.generate(
+            input_ids, 
+            max_length=256, 
+            num_beams=params['num_beams'],
+            no_repeat_ngram_size=params['no_repeat'],
+            repetition_penalty=params['rep_penalty'],
+            temperature=params['temp'],
+            do_sample=True if params['temp'] > 0 else False
+        )
         outputs[task] = tokenizer.decode(gen_tokens[0], skip_special_tokens=True)
     return outputs
 
-# --- SIDEBAR SETTINGS ---
-st.sidebar.title("Model Settings")
-mode = st.sidebar.radio(
+# --- SIDEBAR DEV TOOLS & MODE ---
+st.sidebar.header("Model Selection")
+view_mode = st.sidebar.selectbox(
     "Choose View Mode:",
     ("T5-Small Only", "T5-Base Only", "Compare Side-by-Side")
 )
 
-# Paths based on your folder names
+st.sidebar.divider()
+st.sidebar.header("Generation Params")
+params = {
+    'num_beams': st.sidebar.slider("Beams", 1, 10, 2),
+    'no_repeat': st.sidebar.slider("No Repeat N-Gram", 1, 5, 2),
+    'temp': st.sidebar.slider("Temperature", 0.0, 1.5, 0.5), # Changed min to 0.0
+    'rep_penalty': st.sidebar.slider("Repetition Penalty", 1.0, 3.0, 1.5)
+}
+
+# Paths for your models
 SMALL_PATH = "./AI_574_NLP_Project_Model_T5_Small"
 BASE_PATH = "./AI_574_NLP_Project_Model_T5_Base"
 
 # --- UI LAYOUT ---
-st.title("Teams Meeting AI Analyst")
-st.info("Upload a .vtt transcript to generate a summary and action items.")
+st.title("MS Teams Meeting AI Analyst")
+st.caption("AI 574 NLP, Great Valley, PSU | Abdulaziz Albaiz")
+st.info(f"Current Mode: **{view_mode}** | Adjust sliders in sidebar to tune results.")
 
+# --- FILE INPUTS ---
 uploaded_file = st.file_uploader("Drop your Teams VTT here", type="vtt")
+use_example = st.button("Use Example Test Meeting")
 
+vtt_content = None
 if uploaded_file:
     vtt_content = uploaded_file.getvalue().decode("utf-8")
+elif use_example:
+    try:
+        with open("test_meeting.vtt", "r", encoding="utf-8") as f:
+            vtt_content = f.read()
+    except FileNotFoundError:
+        st.error("Example file 'test_meeting.vtt' not found!")
+
+# --- UNIFIED INSPECTION BLOCK ---
+if vtt_content:
+    with st.expander("Inspect Raw Transcript"):
+        st.code(vtt_content[:1000] + "\n... [truncated]", language="text")
+    
     raw_script = parse_vtt(vtt_content)
     cleaned = clean_text(raw_script).split()
     
-    # Bookend Strategy
     if len(cleaned) > 500:
         snippet = " ".join(cleaned[:300] + ["..."] + cleaned[-200:])
     else:
         snippet = " ".join(cleaned)
 
-    if mode == "T5-Small Only":
+    # --- EXECUTION LOGIC ---
+    if view_mode == "T5-Small Only":
         with st.spinner("Processing with T5-Small..."):
             m, t = load_model(SMALL_PATH)
-            res = run_inference(m, t, snippet)
+            out = run_inference(m, t, snippet, params)
             st.subheader("T5-Small Results")
-            st.markdown(f"**Summary:** {res['Summary']}")
-            st.success(f"**Actions:** {res['Actions']}")
+            st.markdown(f"> {out['Summary']}")
+            st.success(out['Actions'])
 
-    elif mode == "T5-Base Only":
+    elif view_mode == "T5-Base Only":
         with st.spinner("Processing with T5-Base..."):
             m, t = load_model(BASE_PATH)
-            res = run_inference(m, t, snippet)
+            out = run_inference(m, t, snippet, params)
             st.subheader("T5-Base Results")
-            st.markdown(f"**Summary:** {res['Summary']}")
-            st.success(f"**Actions:** {res['Actions']}")
+            st.markdown(f"> {out['Summary']}")
+            st.success(out['Actions'])
 
-    elif mode == "Compare Side-by-Side":
-        col1, col2 = st.columns(2)
+    elif view_mode == "Compare Side-by-Side":
+        col_s, col_b = st.columns(2)
         
-        with col1:
+        with col_s:
             st.header("T5-Small")
-            with st.spinner("Calculating Small..."):
+            with st.spinner("Running Small..."):
                 m_s, t_s = load_model(SMALL_PATH)
-                res_s = run_inference(m_s, t_s, snippet)
+                res_s = run_inference(m_s, t_s, snippet, params)
                 st.markdown(f"**Summary:**\n{res_s['Summary']}")
                 st.success(f"**Actions:**\n{res_s['Actions']}")
                 
-        with col2:
+        with col_b:
             st.header("T5-Base")
-            with st.spinner("Calculating Base..."):
+            with st.spinner("Running Base..."):
                 m_b, t_b = load_model(BASE_PATH)
-                res_b = run_inference(m_b, t_b, snippet)
+                res_b = run_inference(m_b, t_b, snippet, params)
                 st.markdown(f"**Summary:**\n{res_b['Summary']}")
                 st.info(f"**Actions:**\n{res_b['Actions']}")
