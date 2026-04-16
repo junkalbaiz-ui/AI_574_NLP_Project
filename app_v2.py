@@ -18,8 +18,7 @@ st.set_page_config(
 
 # --- CORE FUNCTIONS ---
 def clean_text(text):
-    #text = text.replace("Participant_", "P_").lower()
-    text = text.lower()
+    text = text.replace("Participant_", "P_").lower()
     text = re.sub(r'[^a-z0-9\s:]', '', text)
     fillers = {'um', 'uh', 'mmhmm', 'okay', 'yeah', 'ah', 'oh', 'like'}
     # Matches your training script exactly:
