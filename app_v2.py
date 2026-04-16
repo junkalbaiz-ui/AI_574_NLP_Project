@@ -52,21 +52,33 @@ def run_inference(model, tokenizer, snippet, params):
         outputs[task] = tokenizer.decode(gen_tokens[0], skip_special_tokens=True)
     return outputs
 
-# --- SIDEBAR DEV TOOLS & MODE ---
-st.sidebar.header("Model Selection")
+# --- SIDEBAR: VIEW SELECTION ---
+st.sidebar.header("View Configuration")
 view_mode = st.sidebar.selectbox(
     "Choose View Mode:",
     ("T5-Small Only", "T5-Base Only", "Compare Side-by-Side")
 )
 
-st.sidebar.divider()
-st.sidebar.header("Generation Params")
-params = {
-    'num_beams': st.sidebar.slider("Beams", 1, 10, 2),
-    'no_repeat': st.sidebar.slider("No Repeat N-Gram", 1, 5, 2),
-    'temp': st.sidebar.slider("Temperature", 0.0, 1.5, 0.5), # Changed min to 0.0
-    'rep_penalty': st.sidebar.slider("Repetition Penalty", 1.0, 3.0, 1.5)
-}
+# --- SIDEBAR: MODEL PARAMETERS ---
+def get_params(label):
+    with st.sidebar.expander(f"Settings: {label}", expanded=True):
+        p = {
+            'num_beams': st.slider(f"Beams ({label})", 1, 10, 2, key=f"beams_{label}"),
+            'no_repeat': st.slider(f"No Repeat ({label})", 1, 5, 2, key=f"rep_{label}"),
+            'temp': st.slider(f"Temperature ({label})", 0.0, 1.5, 0.5, key=f"temp_{label}"),
+            'rep_penalty': st.slider(f"Penalty ({label})", 1.0, 3.0, 1.5, key=f"penalty_{label}")
+        }
+    return p
+
+# Logic to show sliders based on mode
+params_small = None
+params_base = None
+
+if view_mode == "T5-Small Only" or view_mode == "Compare Side-by-Side":
+    params_small = get_params("T5-Small")
+
+if view_mode == "T5-Base Only" or view_mode == "Compare Side-by-Side":
+    params_base = get_params("T5-Base")
 
 # Paths for your models
 SMALL_PATH = "./AI_574_NLP_Project_Model_T5_Small"
@@ -75,7 +87,6 @@ BASE_PATH = "./AI_574_NLP_Project_Model_T5_Base"
 # --- UI LAYOUT ---
 st.title("MS Teams Meeting AI Analyst")
 st.caption("AI 574 NLP, Great Valley, PSU | Abdulaziz Albaiz")
-st.info(f"Current Mode: **{view_mode}** | Adjust sliders in sidebar to tune results.")
 
 # --- FILE INPUTS ---
 uploaded_file = st.file_uploader("Drop your Teams VTT here", type="vtt")
@@ -91,7 +102,6 @@ elif use_example:
     except FileNotFoundError:
         st.error("Example file 'test_meeting.vtt' not found!")
 
-# --- UNIFIED INSPECTION BLOCK ---
 if vtt_content:
     with st.expander("Inspect Raw Transcript"):
         st.code(vtt_content[:1000] + "\n... [truncated]", language="text")
@@ -108,7 +118,7 @@ if vtt_content:
     if view_mode == "T5-Small Only":
         with st.spinner("Processing with T5-Small..."):
             m, t = load_model(SMALL_PATH)
-            out = run_inference(m, t, snippet, params)
+            out = run_inference(m, t, snippet, params_small)
             st.subheader("T5-Small Results")
             st.markdown(f"> {out['Summary']}")
             st.success(out['Actions'])
@@ -116,7 +126,7 @@ if vtt_content:
     elif view_mode == "T5-Base Only":
         with st.spinner("Processing with T5-Base..."):
             m, t = load_model(BASE_PATH)
-            out = run_inference(m, t, snippet, params)
+            out = run_inference(m, t, snippet, params_base)
             st.subheader("T5-Base Results")
             st.markdown(f"> {out['Summary']}")
             st.success(out['Actions'])
@@ -128,7 +138,7 @@ if vtt_content:
             st.header("T5-Small")
             with st.spinner("Running Small..."):
                 m_s, t_s = load_model(SMALL_PATH)
-                res_s = run_inference(m_s, t_s, snippet, params)
+                res_s = run_inference(m_s, t_s, snippet, params_small)
                 st.markdown(f"**Summary:**\n{res_s['Summary']}")
                 st.success(f"**Actions:**\n{res_s['Actions']}")
                 
@@ -136,6 +146,6 @@ if vtt_content:
             st.header("T5-Base")
             with st.spinner("Running Base..."):
                 m_b, t_b = load_model(BASE_PATH)
-                res_b = run_inference(m_b, t_b, snippet, params)
+                res_b = run_inference(m_b, t_b, snippet, params_base)
                 st.markdown(f"**Summary:**\n{res_b['Summary']}")
                 st.info(f"**Actions:**\n{res_b['Actions']}")
