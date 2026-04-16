@@ -18,7 +18,8 @@ st.set_page_config(
 
 # --- CORE FUNCTIONS ---
 def clean_text(text):
-    text = text.replace("Participant_", "P_").lower()
+    #text = text.replace("Participant_", "P_").lower()
+    text = text.lower()
     text = re.sub(r'[^a-z0-9\s:]', '', text)
     fillers = {'um', 'uh', 'mmhmm', 'okay', 'yeah', 'ah', 'oh', 'like'}
     # Matches your training script exactly:
@@ -138,6 +139,15 @@ if vtt_content:
     elif view_mode == "T5-Base Only":
         with st.spinner("Processing with T5-Base..."):
             m, t = load_model(BASE_PATH)
+            
+            # --- START HARD-CODED TEST ---
+            test_input = "produce summary: The team met today to discuss the new logo. They decided to use blue."
+            test_ids = t(test_input, return_tensors="pt").input_ids
+            test_gen = m.generate(test_ids, num_beams=2, repetition_penalty=2.5)
+            test_res = t.decode(test_gen[0], skip_special_tokens=True)
+            st.warning(f"Model Sanity Check: {test_res}")
+            # --- END HARD-CODED TEST ---
+            
             out = run_inference(m, t, snippet, params_base)
             st.subheader("T5-Base Results")
             st.markdown(f"> {out['Summary']}")
