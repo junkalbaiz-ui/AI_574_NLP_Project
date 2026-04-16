@@ -10,9 +10,9 @@ from nltk.corpus import stopwords
 nltk.download('stopwords')
 stop_words = set(stopwords.words('english'))
 
-st.set_page_config(page_title="Teams AI Analyst", page_icon="🤖")
+st.set_page_config(page_title="MS Teams AI", page_icon="https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/c7/bd/2f/c7bd2f1f-f892-13ba-d8df-813d18a7c503/Placeholder.mill/400x400bb-75.webp")
 
-# --- CORE FUNCTIONS (Your Training Logic) ---
+# --- CORE FUNCTIONS ---
 def clean_text(text):
     text = text.replace("Participant_", "P_").lower()
     text = re.sub(r'[^a-z0-9\s:]', '', text)
@@ -28,45 +28,87 @@ def parse_vtt(content):
 
 @st.cache_resource
 def load_model():
-    # If the folder is in your GitHub repo, path is just the folder name
-    path = "." 
+    path = "./AI_574_NLP_Project_Model_T5_Small"
     model = T5ForConditionalGeneration.from_pretrained(path)
     tokenizer = T5Tokenizer.from_pretrained(path)
     return model, tokenizer
 
 # --- UI LAYOUT ---
-st.title("Teams Meeting AI Analyst")
-st.info("Upload a .vtt transcript to generate a summary and action items using your fine-tuned T5 model.")
+st.title("MS Teams Meeting AI Analyst")
+st.caption("AI 574 NLP, Great Valley, PSU | Abdulaziz Albaiz")
+st.info("Upload a .vtt transcript or use the example below to generate a summary.")
 
+# --- SIDEBAR DEV TOOLS ---
+st.sidebar.header("Model Dev Tools")
+num_beams = st.sidebar.slider("Beams", 1, 10, 2)
+no_repeat = st.sidebar.slider("No Repeat N-Gram", 1, 5, 2)
+temp = st.sidebar.slider("Temperature", 0.1, 1.5, 0.5)
+rep_penalty = st.sidebar.slider("Repetition Penalty", 1.0, 3.0, 1.5)
+
+# --- FILE INPUTS ---
 uploaded_file = st.file_uploader("Drop your Teams VTT here", type="vtt")
+use_example = st.button("Use Example Test Meeting")
 
+vtt_content = None
+
+# Handle the data source
 if uploaded_file:
-    # Read the file content
     vtt_content = uploaded_file.getvalue().decode("utf-8")
-    
+elif use_example:
+    try:
+        with open("test_meeting.vtt", "r", encoding="utf-8") as f:
+            vtt_content = f.read()
+    except FileNotFoundError:
+        st.error("Example file 'test_meeting.vtt' not found!")
+
+# --- NEW: UNIFIED INSPECTION BLOCK ---
+if vtt_content:
+    st.divider()
+    col1, col2 = st.columns(2)
+    with col1:
+        with st.expander("Inspect Raw Transcript"):
+            # Shows a preview of the content (first 1000 chars)
+            st.code(vtt_content[:1000] + "\n... [truncated]", language="text")
+    with col2:
+        # Dynamic filename based on source
+        fname = uploaded_file.name if uploaded_file else "test_meeting.vtt"
+        st.download_button("Download This VTT", vtt_content, fname)
+    st.divider()
+
+# --- PROCESSING & DISPLAY ---
+if vtt_content:
     with st.spinner("Processing with T5-Small..."):
         model, tokenizer = load_model()
         
-        # Process text
         raw_script = parse_vtt(vtt_content)
         cleaned = clean_text(raw_script).split()
         
-        # Bookend Strategy
         if len(cleaned) > 500:
             snippet = " ".join(cleaned[:300] + ["..."] + cleaned[-200:])
         else:
             snippet = " ".join(cleaned)
 
-        # Generate
         outputs = {}
         for task, prefix in {"Summary": "produce summary: ", "Actions": "list actions: "}.items():
             input_ids = tokenizer(prefix + snippet, return_tensors="pt", truncation=True).input_ids
-            gen_tokens = model.generate(input_ids, max_length=256, num_beams=4, no_repeat_ngram_size=3)
+            
+            gen_tokens = model.generate(
+                input_ids, 
+                max_length=256, 
+                num_beams=num_beams,
+                no_repeat_ngram_size=no_repeat,
+                repetition_penalty=rep_penalty,
+                temperature=temp,
+                do_sample=True if temp > 0 else False
+            )
             outputs[task] = tokenizer.decode(gen_tokens[0], skip_special_tokens=True)
 
-    # Display results in pretty boxes
+    # --- RESULTS ---
     st.subheader("Meeting Summary")
     st.markdown(f"> {outputs['Summary']}")
     
     st.subheader("Action Items")
     st.success(outputs["Actions"])
+    
+    report_text = f"SUMMARY:\n{outputs['Summary']}\n\nACTION ITEMS:\n{outputs['Actions']}"
+    st.download_button("Download Analysis", report_text, "meeting_analysis.txt")
