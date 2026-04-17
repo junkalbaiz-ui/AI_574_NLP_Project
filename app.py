@@ -13,12 +13,30 @@ stop_words = set(stopwords.words('english'))
 st.set_page_config(page_title="MS Teams AI", page_icon="https://is1-ssl.mzstatic.com/image/thumb/PurpleSource221/v4/c7/bd/2f/c7bd2f1f-f892-13ba-d8df-813d18a7c503/Placeholder.mill/400x400bb-75.webp")
 
 # --- CORE FUNCTIONS ---
+# def clean_text(text):
+#     text = text.replace("Participant_", "P_").lower()
+#     text = re.sub(r'[^a-z0-9\s:]', '', text)
+#     fillers = {'um', 'uh', 'mmhmm', 'okay', 'yeah', 'ah', 'oh', 'like'}
+#     all_stop_words = (stop_words.union(fillers)) - {'not', 'no', 'dont'}
+#     return " ".join([w for w in text.split() if w not in all_stop_words])
+
 def clean_text(text):
-    text = text.replace("Participant_", "P_").lower()
-    text = re.sub(r'[^a-z0-9\s:]', '', text)
-    fillers = {'um', 'uh', 'mmhmm', 'okay', 'yeah', 'ah', 'oh', 'like'}
-    all_stop_words = (stop_words.union(fillers)) - {'not', 'no', 'dont'}
-    return " ".join([w for w in text.split() if w not in all_stop_words])
+    # 1. Standardize speaker labels (Good idea, keep this)
+    text = text.replace("Participant_", "P_")
+    
+    # 2. DO NOT lowercase. Models use Capital Letters to find Names/Entities.
+    # 3. DO NOT remove stop words. Transformers need them for grammar.
+    
+    # 4. Selective Filler Removal (Optional)
+    # Only remove the most disruptive ones, but keep "okay" or "no" 
+    # as they often signal agreement or disagreement.
+    disruptive_fillers = r'\b(um|uh|mmhmm|ah)\b'
+    text = re.sub(disruptive_fillers, '', text, flags=re.IGNORECASE)
+    
+    # 5. Fix whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
 
 def parse_vtt(content):
     content = content.replace("WEBVTT", "")
